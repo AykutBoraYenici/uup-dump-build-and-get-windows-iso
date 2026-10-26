@@ -124,7 +124,7 @@ $TARGETS = @{
   "windows-11beta"       = @{ search="windows 11 26120$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Beta" }
   "windows-11dev"        = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif" }
   "windows-1126h1"       = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
-  "windows-1126h2"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
+  "windows-1126h2"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); virtualEdition="CoreSingleLanguage" }
   "windows-1126h2beta"   = @{ search="windows 11 26340$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
   "windows-dev"          = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev" }
   "windows-canary"       = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary" }
@@ -379,7 +379,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
   if ($hasVirtualMember) {
     $convertConfig = $convertConfig `
       -replace '^(StartVirtual\s*)=.*','$1=1' `
-      -replace '^(vDeleteSource\s*)=.*','$1=1' `
+      -replace '^(vDeleteSource\s*)=.*','$1=0' `
       -replace '^(vAutoEditions\s*)=.*',"`$1=$($iso.virtualEdition)"
   }
   Set-Content -Encoding ascii -Path $buildDirectory/ConvertConfig.ini -Value $convertConfig
