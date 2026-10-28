@@ -67,7 +67,7 @@ jobs:
           }
 
           # Match the options used by this repository's previous ISO release:
-          # Turkish, x64, Multi (Home/Pro), .NET Framework 3.5.
+          # Turkish, x64, Multi (Home/Pro/Home Single Language), .NET Framework 3.5.
           $latest = $null
           foreach ($candidate in $candidates) {
             $id = [uri]::EscapeDataString($candidate.uuid)
@@ -76,12 +76,12 @@ jobs:
             if ($langs -notcontains 'tr-tr') { continue }
             $editionData = Invoke-RestMethod -Uri "https://api.uupdump.net/listeditions.php?id=$id&lang=tr-tr" -TimeoutSec 90
             $editions = @($editionData.response.editionFancyNames.PSObject.Properties.Name)
-            if ($editions -notcontains 'Professional' -and $editions -notcontains 'Core') { continue }
+            if ($editions -notcontains 'Professional' -or $editions -notcontains 'Core') { continue }
             $latest = $candidate
             break
           }
           if ($null -eq $latest) {
-            throw 'No 26340.x build with Turkish Home/Pro packages is currently available.'
+            throw 'No 26340.x build with both Turkish Home and Pro packages is currently available.'
           }
 
           # A previous published ISO supersedes the initial 23 October baseline.
