@@ -125,7 +125,7 @@ $TARGETS = @{
   "windows-11dev"        = @{ search="windows 11 26220$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Wif" }
   "windows-1126h1"       = @{ search="windows 11 28000$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
   "windows-1126h2"       = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); virtualEdition="CoreSingleLanguage" }
-  "windows-1126h2beta"   = @{ search="windows 11 26340$dotSystemRevision $arch"; edition=(Get-EditionName $edition) }
+  "windows-1126h2beta"   = @{ search="windows 11 26340$dotSystemRevision $arch"; edition=(Get-EditionName $edition); virtualEdition="CoreSingleLanguage" }
   "windows-dev"          = @{ search="windows 11 26300$dotSystemRevision $arch"; edition=(Get-EditionName $edition); ring="Dev" }
   "windows-canary"       = @{ search="windows 11$systemRevision $arch"; edition=(Get-EditionName $edition); ring="Canary" }
 }
@@ -432,6 +432,23 @@ function Get-WindowsIso($name, $destinationDirectory) {
   Set-Content -Encoding ascii -NoNewline -Path $destinationIsoChecksumPath -Value $isoChecksum
 
   $windowsImages = Get-IsoWindowsImages $sourceIsoPath
+
+  # Experimental Multi ISOs MUST include all three independently selectable editions.
+  # Fail before metadata / release creation when UUP dump doesn't produce every image.
+  if ($windowsTargetName -eq 'windows-1126h2beta' -and $edition -eq 'multi') {
+    $requiredImages = @(
+      'Windows 11 Home'
+      'Windows 11 Pro'
+      'Windows 11 Home Single Language'
+    )
+    $actualImages = @($windowsImages | ForEach-Object { $_.name.Trim() })
+    $missingImages = @($requiredImages | Where-Object { $_ -notin $actualImages })
+    if ($missingImages.Count -gt 0) {
+      throw ("Refusing to publish incomplete Windows 11 26H2 Experimental Multi ISO. Missing editions: {0}. Found: {1}" -f ($missingImages -join ', '), ($actualImages -join ', '))
+    }
+    Write-CleanLine ("Verified required ISO editions: {0}" -f ($requiredImages -join ', '))
+  }
+
   Set-Content -Path $destinationIsoMetadataPath -Value (
     ([PSCustomObject]@{
       name    = $name
