@@ -1,0 +1,125 @@
+name: Check Windows 11 26H2 Experimental (30 October 2026)
+
+on:
+  schedule:
+    # 20:00 Europe/Istanbul = 17:00 UTC. This job is one-time gated below.
+    - cron: '0 17 * * 5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: check-windows-26h2-experimental
+  cancel-in-progress: false
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for a new Experimental build
+        id: check
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # Scheduled runs are restricted to the requested Friday (30 October 2026).
+          # A manual workflow_dispatch is still available for later checks.
+          if ($env:GITHUB_EVENT_NAME -eq 'schedule' -and
+              (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd') -ne '2026-10-30') {
+            Write-Host 'Outside the requested date; no action.'
+            exit 0
+          }
+
+          # 26340.9767 was the last Microsoft-announced Experimental build
+          # before the request (released 23 October 2026).
+          $baselineRevision = 9767
+          $uri = 'https://api.uupdump.net/listid.php?search=windows%2011%2026340%20amd64&sortByDate=1'
+          $data = Invoke-RestMethod -Uri $uri -TimeoutSec 90
+          if (-not $data.response -or -not $data.response.builds) {
+            throw 'UUP dump did not return a usable build list.'
+          }
+
+          $candidates = @(
+            $data.response.builds.PSObject.Properties |
+              ForEach-Object { $_.Value } |
+              Where-Object {
+                $_.arch -eq 'amd64' -and
+                $_.title -match 'Windows 11' -and
+                $_.title -notmatch '\.NET Framework|Windows CPC OS' -and
+                $_.build -match '^26340\.\d+$'
+              } |
+              ForEach-Object {
+                [pscustomobject]@{
+                  revision = [int]($_.build -split '\.')[1]
+                  build = $_.build
+                  uuid = $_.uuid
+                  title = $_.title
+                }
+              } |
+              Sort-Object revision -Descending
+          )
+          if ($candidates.Count -eq 0) {
+            throw 'No Windows 11 26340.x amd64 candidates were found in UUP dump.'
+          }
+
+          # Match the options used by this repository's previous ISO release:
+          # Turkish, x64, Multi (Home/Pro), .NET Framework 3.5.
+          $latest = $null
+          foreach ($candidate in $candidates) {
+            $id = [uri]::EscapeDataString($candidate.uuid)
+            $langData = Invoke-RestMethod -Uri "https://api.uupdump.net/listlangs.php?id=$id" -TimeoutSec 90
+            $langs = @($langData.response.langFancyNames.PSObject.Properties.Name)
+            if ($langs -notcontains 'tr-tr') { continue }
+            $editionData = Invoke-RestMethod -Uri "https://api.uupdump.net/listeditions.php?id=$id&lang=tr-tr" -TimeoutSec 90
+            $editions = @($editionData.response.editionFancyNames.PSObject.Properties.Name)
+            if ($editions -notcontains 'Professional' -and $editions -notcontains 'Core') { continue }
+            $latest = $candidate
+            break
+          }
+          if ($null -eq $latest) {
+            throw 'No 26340.x build with Turkish Home/Pro packages is currently available.'
+          }
+
+          # A previous published ISO supersedes the initial 23 October baseline.
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read GitHub releases.' }
+          $releases = @($releaseJson | ConvertFrom-Json)
+          $publishedRevision = 0
+          foreach ($release in $releases) {
+            if ($release.tag_name -match '^26340\.(\d+)\.26H2\.MULTI\.X64\.TR\.N$') {
+              $publishedRevision = [math]::Max($publishedRevision, [int]$Matches[1])
+            }
+          }
+
+          $threshold = [math]::Max($baselineRevision, $publishedRevision)
+          Write-Host "Latest suitable build: $($latest.build); comparison threshold: 26340.$threshold"
+          if ($latest.revision -le $threshold) {
+            '### No new Windows 11 26H2 Experimental build to publish.' >> $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+
+          "new_build=true" >> $env:GITHUB_OUTPUT
+          "revision=$($latest.revision)" >> $env:GITHUB_OUTPUT
+          "build=$($latest.build)" >> $env:GITHUB_OUTPUT
+          "### New Experimental build detected: $($latest.build); ISO build requested." >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Start existing ISO build and GitHub release workflow
+        if: steps.check.outputs.new_build == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ steps.check.outputs.revision }}
+        run: |
+          gh workflow run build.yml --ref main \
+            -f architecture=x64 \
+            -f versions='Windows 11 26H2 Experimental' \
+            -f edition=Multi \
+            -f language='Turkish (Turkey)' \
+            -f revision="$REVISION" \
+            -f esd=false \
+            -f netfx3=true \
+            -f drivers=false
+          echo "Dispatched ISO build for 26340.$REVISION." >> "$GITHUB_STEP_SUMMARY"
