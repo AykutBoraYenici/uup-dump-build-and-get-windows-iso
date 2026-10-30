@@ -38,14 +38,23 @@ jobs:
           # before the request (released 23 October 2026).
           $baselineRevision = 9767
           $uri = 'https://api.uupdump.net/listid.php?search=windows%2011%2026340%20amd64&sortByDate=1'
-          $data = Invoke-RestMethod -Uri $uri -TimeoutSec 90
-          if (-not $data.response -or -not $data.response.builds) {
-            throw 'UUP dump did not return a usable build list.'
+          $buildEntries = @()
+          try {
+            $data = Invoke-RestMethod -Uri $uri -TimeoutSec 90
+            if ($data.response -and $data.response.builds) {
+              # UUP API may return array-shaped or keyed-object build listings.
+              if ($data.response.builds -is [array]) {
+                $buildEntries = @($data.response.builds)
+              } else {
+                $buildEntries = @($data.response.builds.PSObject.Properties | ForEach-Object { $_.Value })
+              }
+            }
+          } catch {
+            Write-Warning "UUP build-list lookup failed; checking the linked update ID: $_"
           }
 
-          $candidates = @(
-            $data.response.builds.PSObject.Properties |
-              ForEach-Object { $_.Value } |
+          $discovered = @(
+            $buildEntries |
               Where-Object {
                 $_.arch -eq 'amd64' -and
                 $_.title -match 'Windows 11' -and
@@ -59,11 +68,21 @@ jobs:
                   uuid = $_.uuid
                   title = $_.title
                 }
-              } |
-              Sort-Object revision -Descending
+              }
           )
+
+          # Direct user-provided UUP link; verify actual build before using it.
+          $linkedId = '6848e148-e484-4f7e-a9be-7b00db0f2013'
+          $linkedCandidate = [pscustomobject]@{
+            revision = 9843
+            build = '26340.9843'
+            uuid = $linkedId
+            title = 'Windows 11 26H2 Experimental (linked update)'
+          }
+          $candidates = @($linkedCandidate) + @($discovered)
+          $candidates = @($candidates | Sort-Object -Property @{Expression='revision';Descending=$true}, @{Expression={ $_.uuid -eq $linkedId };Descending=$true})
           if ($candidates.Count -eq 0) {
-            throw 'No Windows 11 26340.x amd64 candidates were found in UUP dump.'
+            throw 'No Windows 11 26340.x amd64 candidates are available.'
           }
 
           # Match the options used by this repository's previous ISO release:
@@ -71,7 +90,16 @@ jobs:
           $latest = $null
           foreach ($candidate in $candidates) {
             $id = [uri]::EscapeDataString($candidate.uuid)
-            $langData = Invoke-RestMethod -Uri "https://api.uupdump.net/listlangs.php?id=$id" -TimeoutSec 90
+            try {
+              $langData = Invoke-RestMethod -Uri "https://api.uupdump.net/listlangs.php?id=$id" -TimeoutSec 90
+            } catch {
+              Write-Warning "Skipping $($candidate.uuid) due to a UUP metadata error: $_"
+              continue
+            }
+            if ($langData.response.updateInfo.build -ne $candidate.build) {
+              Write-Warning "Skipping $($candidate.uuid): UUP API reported a different build."
+              continue
+            }
             $langs = @($langData.response.langFancyNames.PSObject.Properties.Name)
             if ($langs -notcontains 'tr-tr') { continue }
             $editionData = Invoke-RestMethod -Uri "https://api.uupdump.net/listeditions.php?id=$id&lang=tr-tr" -TimeoutSec 90
@@ -105,6 +133,7 @@ jobs:
           "new_build=true" >> $env:GITHUB_OUTPUT
           "revision=$($latest.revision)" >> $env:GITHUB_OUTPUT
           "build=$($latest.build)" >> $env:GITHUB_OUTPUT
+          "uup_id=$($latest.uuid)" >> $env:GITHUB_OUTPUT
           "### New Experimental build detected: $($latest.build); ISO build requested." >> $env:GITHUB_STEP_SUMMARY
 
       - name: Start existing ISO build and GitHub release workflow
@@ -113,6 +142,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           REVISION: ${{ steps.check.outputs.revision }}
+          UUP_ID: ${{ steps.check.outputs.uup_id }}
         run: |
           gh workflow run build.yml --ref main \
             -f architecture=x64 \
@@ -120,6 +150,7 @@ jobs:
             -f edition=Multi \
             -f language='Turkish (Turkey)' \
             -f revision="$REVISION" \
+            -f uup_id="$UUP_ID" \
             -f esd=false \
             -f netfx3=true \
             -f drivers=false
