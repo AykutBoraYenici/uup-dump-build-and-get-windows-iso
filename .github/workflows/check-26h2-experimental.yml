@@ -111,6 +111,7 @@ jobs:
         if: steps.check.outputs.new_build == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           REVISION: ${{ steps.check.outputs.revision }}
         run: |
           gh workflow run build.yml --ref main \
