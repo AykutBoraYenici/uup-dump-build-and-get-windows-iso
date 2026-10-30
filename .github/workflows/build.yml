@@ -96,6 +96,10 @@ on:
         description: "Revision number (optional)"
         type: string
         required: false
+      uup_id:
+        description: "Exact UUP update ID (Experimental only; optional)"
+        type: string
+        required: false
       esd:
         description: "Use ESD compression"
         type: boolean
@@ -194,6 +198,9 @@ jobs:
           if ('${{ inputs.netfx3 }}' -eq 'true')  { $opts += ' -netfx3' }
           if (-not [string]::IsNullOrWhiteSpace('${{ inputs.revision }}')) {
             $opts += ' -revision "${{ inputs.revision }}"'
+          }
+          if (-not [string]::IsNullOrWhiteSpace('${{ inputs.uup_id }}')) {
+            $opts += ' -uupId "${{ inputs.uup_id }}"'
           }
           $opts = $opts.Trim()
 
