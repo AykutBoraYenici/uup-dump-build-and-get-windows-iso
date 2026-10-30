@@ -1,0 +1,4 @@
+One-time check request, 2026-10-30 Europe/Istanbul
+Source: https://uupdump.net/selectlang.php?id=6848e148-e484-4f7e-a9be-7b00db0f2013
+Expected: Windows 11 26H2 Experimental 26340.9843, x64, tr-tr, Home + Pro + Home Single Language
+The workflow must validate the actual UUP update before building and publishing.
