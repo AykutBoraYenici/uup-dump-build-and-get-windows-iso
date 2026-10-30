@@ -5,6 +5,10 @@ on:
     # 20:00 Europe/Istanbul = 17:00 UTC. This job is one-time gated below.
     - cron: '0 17 * * 5'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/trigger-26h2-experimental-build.txt'
 
 permissions:
   contents: read
